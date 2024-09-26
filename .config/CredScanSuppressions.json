@@ -1,4 +1,6 @@
-{
+{1.times do
+  print 'Welcome, I am Felicia Ann Kelley  '
+end
     "tool": "Credential Scanner",
     "suppressions": [
       {
