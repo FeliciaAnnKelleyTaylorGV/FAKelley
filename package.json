@@ -2,7 +2,7 @@
     "name": "python",
     "displayName": "Python",
     "description": "Python language support with extension access points for IntelliSense (Pylance), Debugging (Python Debugger), linting, formatting, refactoring, unit tests, and more.",
-    "version": "2024.15.0-dev",
+    "version": "2024.19.0-dev",
     "featureFlags": {
         "usingNewInterpreterStorage": true
     },
@@ -24,7 +24,9 @@
         "quickPickItemTooltip",
         "terminalDataWriteEvent",
         "terminalExecuteCommandEvent",
-        "contribIssueReporter"
+        "codeActionAI",
+        "notebookReplDocument",
+        "notebookVariableProvider"
     ],
     "author": {
         "name": "Microsoft Corporation"
@@ -45,7 +47,7 @@
         "theme": "dark"
     },
     "engines": {
-        "vscode": "^1.89.0-20240415"
+        "vscode": "^1.94.0-20240918"
     },
     "enableTelemetry": false,
     "keywords": [
@@ -65,6 +67,7 @@
         "onDebugInitialConfigurations",
         "onLanguage:python",
         "onDebugResolve:python",
+        "onCommand:python.copilotSetupTests",
         "workspaceContains:mspythonconfig.json",
         "workspaceContains:pyproject.toml",
         "workspaceContains:Pipfile",
@@ -79,6 +82,28 @@
     "browser": "./dist/extension.browser.js",
     "l10n": "./l10n",
     "contributes": {
+        "problemMatchers": [
+            {
+                "name": "python",
+                "owner": "python",
+                "source": "python",
+                "fileLocation": "autoDetect",
+                "pattern": [
+                    {
+                        "regexp": "^.*File \\\"([^\\\"]|.*)\\\", line (\\d+).*",
+                        "file": 1,
+                        "line": 2
+                    },
+                    {
+                        "regexp": "^\\s*(.*)\\s*$"
+                    },
+                    {
+                        "regexp": "^\\s*(.*Error.*)$",
+                        "message": 1
+                    }
+                ]
+            }
+        ],
         "walkthroughs": [
             {
                 "id": "pythonWelcome",
@@ -556,10 +581,7 @@
                         "Warning"
                     ],
                     "scope": "resource",
-                    "type": "string",
-                    "tags": [
-                        "experimental"
-                    ]
+                    "type": "string"
                 },
                 "python.locator": {
                     "default": "js",
@@ -569,7 +591,8 @@
                         "native"
                     ],
                     "tags": [
-                        "experimental"
+                        "onExP",
+                        "preview"
                     ],
                     "scope": "machine",
                     "type": "string"
@@ -630,6 +653,15 @@
                     "scope": "resource",
                     "type": "array"
                 },
+                "python.terminal.shellIntegration.enabled": {
+                    "default": false,
+                    "markdownDescription": "%python.terminal.shellIntegration.enabled.description%",
+                    "scope": "resource",
+                    "type": "boolean",
+                    "tags": [
+                        "preview"
+                    ]
+                },
                 "python.REPL.enableREPLSmartSend": {
                     "default": true,
                     "description": "%python.EnableREPLSmartSend.description%",
@@ -642,8 +674,15 @@
                     "scope": "resource",
                     "type": "boolean",
                     "tags": [
-                        "experimental"
+                        "onExP",
+                        "preview"
                     ]
+                },
+                "python.REPL.provideVariables": {
+                    "default": true,
+                    "description": "%python.REPL.provideVariables.description%",
+                    "scope": "resource",
+                    "type": "boolean"
                 },
                 "python.testing.autoTestDiscoverOnSaveEnabled": {
                     "default": true,
@@ -1125,17 +1164,22 @@
             {
                 "command": "python.execSelectionInTerminal",
                 "key": "shift+enter",
-                "when": "editorTextFocus && editorLangId == python && !findInputFocussed && !replaceInputFocussed && !jupyter.ownsSelection && !notebookEditorFocused && activeEditor != 'workbench.editor.interactive'"
+                "when": "editorTextFocus && editorLangId == python && !findInputFocussed && !replaceInputFocussed && !jupyter.ownsSelection && !notebookEditorFocused && !isCompositeNotebook"
             },
             {
                 "command": "python.execInREPL",
                 "key": "shift+enter",
-                "when": "!accessibilityModeEnabled && config.python.REPL.sendToNativeREPL && activeEditor != 'workbench.editor.interactive'&& editorLangId == python && editorTextFocus && !jupyter.ownsSelection && !notebookEditorFocused"
+                "when": "!accessibilityModeEnabled && config.python.REPL.sendToNativeREPL && editorLangId == python && editorTextFocus && !jupyter.ownsSelection && !notebookEditorFocused && !isCompositeNotebook"
             },
             {
                 "command": "python.execInREPLEnter",
                 "key": "enter",
-                "when": "!config.interactiveWindow.executeWithShiftEnter && activeEditor == 'workbench.editor.interactive'"
+                "when": "!config.interactiveWindow.executeWithShiftEnter && activeEditor == 'workbench.editor.repl' && !inlineChatFocused && !notebookCellListFocused"
+            },
+            {
+                "command": "python.execInInteractiveWindowEnter",
+                "key": "enter",
+                "when": "!config.interactiveWindow.executeWithShiftEnter && activeEditor == 'workbench.editor.interactive' && !inlineChatFocused && !notebookCellListFocused"
             },
             {
                 "command": "python.refreshTensorBoard",
@@ -1192,7 +1236,8 @@
             {
                 "filenames": [
                     "Pipfile",
-                    "poetry.lock"
+                    "poetry.lock",
+                    "uv.lock"
                 ],
                 "id": "toml"
             },
@@ -1484,6 +1529,11 @@
             }
         ]
     },
+    "copilot": {
+        "tests": {
+            "getSetupConfirmation": "python.copilotSetupTests"
+        }
+    },
     "scripts": {
         "package": "gulp clean && gulp prePublishBundle && vsce package -o ms-python-insiders.vsix",
         "prePublish": "gulp clean && gulp prePublishNonBundle",
@@ -1570,7 +1620,7 @@
         "@types/sinon": "^17.0.3",
         "@types/stack-trace": "0.0.29",
         "@types/tmp": "^0.0.33",
-        "@types/vscode": "^1.81.0",
+        "@types/vscode": "^1.93.0",
         "@types/which": "^2.0.1",
         "@types/winreg": "^1.2.30",
         "@types/xml2js": "^0.4.2",
@@ -1592,6 +1642,7 @@
         "eslint-config-prettier": "^8.3.0",
         "eslint-plugin-import": "^2.29.1",
         "eslint-plugin-jsx-a11y": "^6.3.1",
+        "eslint-plugin-no-only-tests": "^3.3.0",
         "eslint-plugin-react": "^7.20.3",
         "eslint-plugin-react-hooks": "^4.0.0",
         "expose-loader": "^3.1.0",
